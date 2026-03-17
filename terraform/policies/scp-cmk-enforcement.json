@@ -1,0 +1,102 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DenyS3WithoutCMK",
+      "Effect": "Deny",
+      "Action": "s3:PutObject",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "s3:x-amz-server-side-encryption": "aws:kms",
+          "aws:PrincipalTag/dp:kms:enforcement": [
+            "excluded"
+          ]
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
+        }
+      }
+    },
+    {
+      "Sid": "DenyS3BucketWithoutDefaultCMK",
+      "Effect": "Deny",
+      "Action": "s3:PutEncryptionConfiguration",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "s3:x-amz-server-side-encryption": "aws:kms"
+        }
+      }
+    },
+    {
+      "Sid": "DenyDynamoDBWithoutCMK",
+      "Effect": "Deny",
+      "Action": "dynamodb:CreateTable",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "dynamodb:encryptionType": "CUSTOMER_MANAGED_CMK"
+        }
+      }
+    },
+    {
+      "Sid": "DenySQSWithoutCMK",
+      "Effect": "Deny",
+      "Action": "sqs:CreateQueue",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "sqs:KmsMasterKeyId": "true"
+        }
+      }
+    },
+    {
+      "Sid": "DenySNSWithoutCMK",
+      "Effect": "Deny",
+      "Action": "sns:CreateTopic",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "sns:KmsMasterKeyId": "true"
+        }
+      }
+    },
+    {
+      "Sid": "DenyEBSWithoutEncryption",
+      "Effect": "Deny",
+      "Action": "ec2:CreateVolume",
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "ec2:Encrypted": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRDSWithoutEncryption",
+      "Effect": "Deny",
+      "Action": [
+        "rds:CreateDBInstance",
+        "rds:CreateDBCluster"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "rds:StorageEncrypted": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyKMSKeyWithoutClassificationTags",
+      "Effect": "Deny",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/dp:data-zone": "true"
+        }
+      }
+    }
+  ]
+}

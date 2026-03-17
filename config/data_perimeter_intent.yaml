@@ -1,0 +1,116 @@
+version: "1.0"
+organization:
+  id: "o-abc123xyz"
+  name: "Example Corp"
+
+ou_mapping:
+  shared_services:
+    ou_id: "ou-abc1-shared00"
+    description: "Shared services accounts (security tooling, logging, networking, CI/CD)"
+    policies:
+      - layer_1_cmk_enforcement
+      - layer_2_kms_abac
+      - layer_3a_org_boundary
+      - layer_3b_identity_perimeter
+      - layer_4_network_perimeter
+      - layer_6_tag_governance
+    enforcement_mode: "enforced"
+
+  business_unit:
+    ou_id: "ou-abc1-bu000000"
+    description: "Business unit workload accounts (internal applications, data processing)"
+    policies:
+      - layer_1_cmk_enforcement
+      - layer_2_kms_abac
+      - layer_3a_org_boundary
+      - layer_3b_identity_perimeter
+      - layer_4_network_perimeter
+      - layer_6_tag_governance
+    enforcement_mode: "enforced"
+
+  internet_facing:
+    ou_id: "ou-abc1-inet0000"
+    description: "Internet-facing accounts (public APIs, CDN origins, web apps)"
+    policies:
+      - layer_1_cmk_enforcement
+      - layer_2_kms_abac
+      - layer_3a_org_boundary
+      - layer_3b_identity_perimeter
+      - layer_4_network_perimeter
+      - layer_6_tag_governance
+    enforcement_mode: "enforced"
+
+  canary_testing:
+    ou_id: "ou-abc1-canary00"
+    description: "Canary testing OU — deploy and validate new policies here first"
+    policies:
+      - layer_1_cmk_enforcement
+      - layer_2_kms_abac
+      - layer_3a_org_boundary
+      - layer_3b_identity_perimeter
+      - layer_4_network_perimeter
+      - layer_6_tag_governance
+    enforcement_mode: "enforced"
+
+perimeter_configuration:
+  identity_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+
+    exceptions:
+      - type: "third_party_integration"
+        principal_accounts: ["123456789012", "234567890123"]
+        resource_arns:
+          - "arn:aws:s3:::partner-data-bucket/*"
+        justification: "Partner data sharing agreement"
+        expiry: "2027-12-31"
+
+      - type: "service_role"
+        principal_pattern: "role/AWSServiceRoleFor*"
+        scope: "organization"
+        justification: "AWS service-linked roles"
+        permanent: true
+
+  resource_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+
+    allowed_external_resources:
+      - type: "aws_managed"
+        patterns:
+          - "arn:aws:s3:::aws-*"
+          - "arn:aws:s3:::amazon-*"
+          - "arn:aws:s3:::jumpstart-cache-prod-*"
+
+  network_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+
+    expected_networks:
+      corporate_cidrs:
+        - "10.0.0.0/8"
+        - "172.16.0.0/12"
+        - "203.0.113.0/24"
+
+      allowed_vpcs:
+        - "vpc-aaa111"
+        - "vpc-bbb222"
+        - "vpc-ccc333"
+
+tag_governance:
+  protected_tags:
+    - "dp:exception:*"
+    - "dp:*:enforcement"
+    - "dp:data-zone"
+    - "dp:environment"
+    - "dp:project"
+
+  tag_mutation_control:
+    allowed_mutators:
+      - tag: "team"
+        value: "security-admin"
+      - tag: "team"
+        value: "platform-engineering"

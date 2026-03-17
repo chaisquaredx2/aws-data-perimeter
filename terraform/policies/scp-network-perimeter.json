@@ -1,0 +1,40 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnforceNetworkPerimeterExpectedNetworks",
+      "Effect": "Deny",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
+        },
+        "Null": {
+          "aws:PrincipalTag/dp:exception:id": "true"
+        },
+        "StringNotEqualsIfExists": {
+          "aws:PrincipalTag/dp:network:enforcement": [
+            "excluded",
+            "monitoring"
+          ],
+          "aws:SourceVpc": [
+            "vpc-aaa111",
+            "vpc-bbb222",
+            "vpc-ccc333"
+          ]
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
+        },
+        "NotIpAddressIfExists": {
+          "aws:SourceIp": [
+            "10.0.0.0/8",
+            "172.16.0.0/12",
+            "203.0.113.0/24"
+          ]
+        }
+      }
+    }
+  ]
+}

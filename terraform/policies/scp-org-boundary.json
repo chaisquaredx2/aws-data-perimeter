@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnforceResourcePerimeterOrgBoundary",
+      "Effect": "Deny",
+      "Action": [
+        "s3:*",
+        "sqs:*",
+        "sns:*",
+        "kms:*",
+        "lambda:*",
+        "secretsmanager:*",
+        "ssm:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:ResourceOrgID": "o-abc123xyz"
+        },
+        "StringNotEqualsIfExists": {
+          "aws:PrincipalTag/dp:resource:enforcement": [
+            "excluded",
+            "monitoring"
+          ]
+        },
+        "Null": {
+          "aws:PrincipalTag/dp:exception:id": "true"
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*",
+          "aws:ResourceArn": [
+            "arn:aws:s3:::aws-*",
+            "arn:aws:s3:::amazon-*",
+            "arn:aws:s3:::jumpstart-cache-prod-*"
+          ]
+        }
+      }
+    }
+  ]
+}

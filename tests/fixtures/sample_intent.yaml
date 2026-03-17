@@ -1,0 +1,56 @@
+version: "1.0"
+organization:
+  id: "o-testorg123"
+  name: "Test Corp"
+
+ou_mapping:
+  canary_testing:
+    ou_id: "ou-test-canary"
+    description: "Canary testing OU"
+    policies:
+      - layer_1_cmk_enforcement
+      - layer_2_kms_abac
+      - layer_3a_org_boundary
+      - layer_3b_identity_perimeter
+      - layer_4_network_perimeter
+      - layer_6_tag_governance
+    enforcement_mode: "enforced"
+
+perimeter_configuration:
+  identity_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+    exceptions:
+      - type: "third_party_integration"
+        principal_accounts: ["999888777666"]
+        justification: "Test partner"
+        expiry: "2027-12-31"
+
+  resource_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+    allowed_external_resources:
+      - type: "aws_managed"
+        patterns:
+          - "arn:aws:s3:::aws-*"
+
+  network_perimeter:
+    enabled: true
+    enforcement_mode: "enforced"
+    default_action: "deny"
+    expected_networks:
+      corporate_cidrs:
+        - "10.0.0.0/8"
+      allowed_vpcs:
+        - "vpc-test111"
+
+tag_governance:
+  protected_tags:
+    - "dp:exception:*"
+    - "dp:data-zone"
+  tag_mutation_control:
+    allowed_mutators:
+      - tag: "team"
+        value: "security-admin"

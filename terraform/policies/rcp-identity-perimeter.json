@@ -1,0 +1,31 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnforceIdentityPerimeterOrgBoundary",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "aws:PrincipalOrgID": "o-abc123xyz",
+          "aws:ResourceTag/dp:identity:enforcement": [
+            "excluded",
+            "monitoring"
+          ],
+          "aws:PrincipalAccount": [
+            "123456789012",
+            "234567890123"
+          ]
+        },
+        "BoolIfExists": {
+          "aws:PrincipalIsAWSService": "false"
+        },
+        "Null": {
+          "aws:ResourceTag/dp:exception:id": "true"
+        }
+      }
+    }
+  ]
+}

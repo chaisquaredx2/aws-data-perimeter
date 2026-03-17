@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Data Perimeter Exception Request",
+  "type": "object",
+  "required": ["exception_id", "request_date", "requester", "exception_type", "scope", "exception_details", "implementation"],
+  "properties": {
+    "exception_id": {
+      "type": "string",
+      "pattern": "^EXC-\\d{4}-\\d{4}$"
+    },
+    "request_date": {
+      "type": "string",
+      "format": "date"
+    },
+    "requester": {
+      "type": "string",
+      "format": "email"
+    },
+    "exception_type": {
+      "type": "string",
+      "enum": ["third_party_access", "service_exemption", "temporary_override"]
+    },
+    "scope": {
+      "type": "object",
+      "required": ["target_type", "target_identifiers"],
+      "properties": {
+        "perimeter_types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["identity", "kms", "network", "resource"]
+          }
+        },
+        "target_type": {
+          "type": "string",
+          "enum": ["kms_key", "principal"]
+        },
+        "target_identifiers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "minItems": 1
+        },
+        "target_alias": { "type": "string" },
+        "encrypted_resources": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "exception_details": {
+      "type": "object",
+      "required": ["duration", "justification", "security_review"],
+      "properties": {
+        "allowed_external_principals": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "account": { "type": "string", "pattern": "^\\d{12}$" },
+              "description": { "type": "string" },
+              "actions": { "type": "array", "items": { "type": "string" } },
+              "kms_actions": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "duration": {
+          "type": "object",
+          "required": ["end_date"],
+          "properties": {
+            "start_date": { "type": "string", "format": "date" },
+            "end_date": { "type": "string", "format": "date" },
+            "auto_renew": { "type": "boolean", "default": false }
+          }
+        },
+        "justification": {
+          "type": "string",
+          "minLength": 50
+        },
+        "security_review": {
+          "type": "object",
+          "required": ["risk_rating", "reviewer"],
+          "properties": {
+            "risk_rating": {
+              "type": "string",
+              "enum": ["low", "medium", "high"]
+            },
+            "mitigating_controls": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "reviewer": { "type": "string" },
+            "approval_date": { "type": "string", "format": "date" }
+          }
+        },
+        "compliance_impact": {
+          "type": "object",
+          "properties": {
+            "frameworks_affected": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "compensating_controls": { "type": "string" },
+            "compliance_approval": { "type": "string" }
+          }
+        }
+      }
+    },
+    "implementation": {
+      "type": "object",
+      "required": ["method", "tags_to_apply"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "enum": ["kms_key_tag", "principal_tag"]
+        },
+        "tags_to_apply": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["key", "value"],
+            "properties": {
+              "key": { "type": "string" },
+              "value": { "type": "string" }
+            }
+          },
+          "minItems": 1
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ProtectDataPerimeterTags",
+      "Effect": "Deny",
+      "Action": [
+        "kms:TagResource",
+        "kms:UntagResource",
+        "iam:TagRole",
+        "iam:UntagRole",
+        "iam:TagUser",
+        "iam:UntagUser"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ForAnyValue:StringLike": {
+          "aws:TagKeys": [
+            "dp:exception:*",
+            "dp:*:enforcement",
+            "dp:data-zone",
+            "dp:environment",
+            "dp:project",
+            "dp:data-classification",
+            "dp:compliance-scope"
+          ]
+        },
+        "StringNotEquals": {
+          "aws:PrincipalTag/team": [
+            "security-admin",
+            "platform-engineering"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "RequireKMSKeyDataZoneTag",
+      "Effect": "Deny",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/dp:data-zone": "true"
+        }
+      }
+    },
+    {
+      "Sid": "RequireKMSKeyEnvironmentTag",
+      "Effect": "Deny",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/dp:environment": "true"
+        }
+      }
+    },
+    {
+      "Sid": "RequireKMSKeyProjectTag",
+      "Effect": "Deny",
+      "Action": "kms:CreateKey",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:RequestTag/dp:project": "true"
+        }
+      }
+    }
+  ]
+}

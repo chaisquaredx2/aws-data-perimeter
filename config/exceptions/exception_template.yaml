@@ -1,0 +1,64 @@
+# Data Perimeter Exception Request Template
+#
+# In the KMS-centric model, exception tags are applied to:
+#   - KMS keys (for inbound third-party access — covers all resources using that key)
+#   - IAM principals (for outbound access to external resources)
+# NOT to individual resources (S3 buckets, SQS queues, etc.)
+#
+# Copy this file, fill in the values, and submit for approval.
+
+exception_id: "EXC-YYYY-NNNN"          # Unique ID (assigned by security team)
+request_date: "2026-01-01"
+requester: "requester@example.com"
+
+exception_type: "third_party_access"    # third_party_access | service_exemption | temporary_override
+
+scope:
+  perimeter_types: ["identity", "kms"]  # Which perimeter layers this exception bypasses
+  target_type: "kms_key"                # kms_key | principal
+  target_identifiers:
+    - "arn:aws:kms:us-east-1:111122223333:key/EXAMPLE-KEY-ID"
+  target_alias: "alias/dp/ZONE/ENVIRONMENT/PROJECT"
+  encrypted_resources:                  # Informational — all resources using this KMS key are covered
+    - "arn:aws:s3:::example-bucket"
+
+exception_details:
+  allowed_external_principals:
+    - account: "123456789012"
+      description: "Partner Company"
+      actions: ["s3:GetObject"]
+      kms_actions: ["kms:Decrypt", "kms:GenerateDataKey"]
+
+  duration:
+    start_date: "2026-04-01"
+    end_date: "2027-03-31"
+    auto_renew: false
+
+  justification: |
+    Business justification for this exception (minimum 50 characters).
+    Include reference to contract, SOW, or business requirement.
+
+  security_review:
+    risk_rating: "medium"               # low | medium | high (high requires CISO approval)
+    mitigating_controls:
+      - "Dedicated KMS key for partner data"
+      - "CloudTrail logging all KMS and S3 access"
+    reviewer: "security-team@example.com"
+    approval_date: "2026-03-20"
+
+  compliance_impact:
+    frameworks_affected: []             # e.g., SOC2, ISO27001, HIPAA
+    compensating_controls: ""
+    compliance_approval: ""
+
+implementation:
+  method: "kms_key_tag"                 # kms_key_tag | principal_tag
+  tags_to_apply:
+    - key: "dp:exception:id"
+      value: "EXC-YYYY-NNNN"
+    - key: "dp:exception:expiry"
+      value: "2027-03-31"
+    - key: "dp:exception:justification"
+      value: "Brief justification (max 256 chars)"
+    - key: "dp:exception:approver"
+      value: "approver@example.com"
