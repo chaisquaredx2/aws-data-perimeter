@@ -30,6 +30,9 @@
             "security-admin",
             "platform-engineering"
           ]
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
         }
       }
     },

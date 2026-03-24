@@ -1,0 +1,33 @@
+# Data Perimeter Violations
+#
+# Finds resources with external access (cross-account or public) that do NOT
+# have an approved exception tag (dp:exception:id). These represent potential
+# unauthorized external access that should be investigated.
+
+{
+  graphSearch(
+    query: "{type in ('AWS::S3::Bucket', 'AWS::KMS::Key', 'AWS::SQS::Queue', 'AWS::SNS::Topic', 'AWS::Lambda::Function', 'AWS::SecretsManager::Secret') AND _networkExposure.isExposed = true AND NOT tags.#(key = 'dp:exception:id')}"
+    first: 100
+  ) {
+    nodes {
+      entities {
+        id
+        name
+        type
+        tags {
+          key
+          value
+        }
+        ... on AWSResource {
+          region
+          accountId
+          arn
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}

@@ -12,8 +12,10 @@ venv/
 *.tfstate
 *.tfstate.*
 *.tfplan
+*.tfvars
+!terraform/environments/canary/terraform.tfvars.example
 .terraform.lock.hcl
-terraform/modules/exception-enforcer/.build/
+terraform/modules/**/.build/
 
 # IDE
 .vscode/

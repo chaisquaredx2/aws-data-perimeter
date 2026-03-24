@@ -73,7 +73,7 @@ class TestGeneratePolicies:
 class TestCMKEnforcement:
     def test_statement_count(self, policies):
         stmts = policies["scp-cmk-enforcement"]["Statement"]
-        assert len(stmts) == 8
+        assert len(stmts) == 15
 
     def test_covers_s3(self, policies):
         sids = [s["Sid"] for s in policies["scp-cmk-enforcement"]["Statement"]]
@@ -90,9 +90,93 @@ class TestCMKEnforcement:
             "DenySNSWithoutCMK",
             "DenyEBSWithoutEncryption",
             "DenyRDSWithoutEncryption",
+            "DenyEFSWithoutCMK",
+            "DenySecretsManagerWithoutCMK",
+            "DenyKinesisWithoutCMK",
+            "DenyRedshiftWithoutCMK",
+            "DenyCloudWatchLogsRemoveCMK",
+            "DenyCloudWatchLogsCreateWithoutCMK",
+            "DenyNonCMKKeyUsage",
             "DenyKMSKeyWithoutClassificationTags",
         }
         assert sids == expected
+
+    def test_dynamodb_covers_mutations(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyDynamoDBWithoutCMK")
+        actions = stmt["Action"]
+        assert "dynamodb:CreateTable" in actions
+        assert "dynamodb:UpdateTable" in actions
+        assert "dynamodb:RestoreTableFromBackup" in actions
+
+    def test_rds_covers_read_replicas(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyRDSWithoutEncryption")
+        assert "rds:CreateDBInstanceReadReplica" in stmt["Action"]
+
+    def test_efs_requires_encryption(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyEFSWithoutCMK")
+        assert stmt["Condition"]["Bool"]["elasticfilesystem:Encrypted"] == "false"
+
+    def test_secrets_manager_requires_cmk(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenySecretsManagerWithoutCMK")
+        assert stmt["Condition"]["Null"]["secretsmanager:KmsKeyId"] == "true"
+
+    def test_kinesis_requires_cmk(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyKinesisWithoutCMK")
+        assert "kinesis:CreateStream" in stmt["Action"]
+        assert stmt["Condition"]["StringNotEqualsIfExists"]["kinesis:EncryptionType"] == "KMS"
+
+    def test_redshift_requires_encryption(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyRedshiftWithoutCMK")
+        assert "redshift:CreateCluster" in stmt["Action"]
+        assert "redshift:RestoreFromClusterSnapshot" in stmt["Action"]
+        assert stmt["Condition"]["Bool"]["redshift:Encrypted"] == "false"
+
+    def test_cloudwatch_logs_deny_disassociate(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyCloudWatchLogsRemoveCMK")
+        assert stmt["Action"] == "logs:DisassociateKmsKey"
+        assert "Condition" not in stmt  # unconditional deny
+
+    def test_cloudwatch_logs_create_requires_automation_tag(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyCloudWatchLogsCreateWithoutCMK")
+        condition = stmt["Condition"]["StringNotEqualsIfExists"]
+        assert "aws:PrincipalTag/dp:logs:cmk-automation" in condition
+
+    def test_cloudwatch_logs_create_allows_aws_services(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyCloudWatchLogsCreateWithoutCMK")
+        assert stmt["Condition"]["BoolIfExists"]["aws:ViaAWSService"] == "false"
+        assert "arn:aws:iam::*:role/aws-service-role/*" in (
+            stmt["Condition"]["ArnNotLikeIfExists"]["aws:PrincipalArn"]
+        )
+
+    def test_s3_allows_aws_service_writes(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyS3WithoutCMK")
+        assert stmt["Condition"]["BoolIfExists"]["aws:ViaAWSService"] == "false"
+
+    def test_deny_non_cmk_key_usage(self, policies):
+        stmt = next(s for s in policies["scp-cmk-enforcement"]["Statement"]
+                     if s["Sid"] == "DenyNonCMKKeyUsage")
+        # Denies when key lacks dp:data-zone tag (not our CMK)
+        assert stmt["Condition"]["Null"]["aws:ResourceTag/dp:data-zone"] == "true"
+        # Allows AWS service-to-service calls (ALB → S3, etc.)
+        assert stmt["Condition"]["BoolIfExists"]["aws:ViaAWSService"] == "false"
+        # Allows service-linked roles
+        assert "arn:aws:iam::*:role/aws-service-role/*" in (
+            stmt["Condition"]["ArnNotLikeIfExists"]["aws:PrincipalArn"]
+        )
+        # Covers all KMS crypto operations
+        assert "kms:Decrypt" in stmt["Action"]
+        assert "kms:Encrypt" in stmt["Action"]
+        assert "kms:GenerateDataKey" in stmt["Action"]
 
 
 class TestKMSABAC:
@@ -143,6 +227,12 @@ class TestTagGovernance:
         mutator_values = stmt["Condition"]["StringNotEquals"]["aws:PrincipalTag/team"]
         assert "security-admin" in mutator_values
 
+    def test_allows_service_linked_roles(self, policies):
+        stmt = policies["scp-tag-governance"]["Statement"][0]
+        assert "arn:aws:iam::*:role/aws-service-role/*" in (
+            stmt["Condition"]["ArnNotLikeIfExists"]["aws:PrincipalArn"]
+        )
+
 
 class TestOrgBoundary:
     def test_single_statement(self, policies):
@@ -174,6 +264,10 @@ class TestOrgBoundary:
     def test_exception_bypass(self, policies):
         condition = policies["scp-org-boundary"]["Statement"][0]["Condition"]
         assert condition["Null"]["aws:PrincipalTag/dp:exception:id"] == "true"
+
+    def test_allows_aws_service_calls(self, policies):
+        condition = policies["scp-org-boundary"]["Statement"][0]["Condition"]
+        assert condition["BoolIfExists"]["aws:ViaAWSService"] == "false"
 
 
 class TestIdentityPerimeter:

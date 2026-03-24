@@ -1,0 +1,34 @@
+# Expired Exceptions
+#
+# Finds resources that have a dp:exception:expiry tag with a date in the past
+# AND still show external access. The ExceptionExpiryEnforcer Lambda should
+# have removed these tags — if they still appear here, the Lambda may be
+# failing or running in dry-run mode.
+
+{
+  graphSearch(
+    query: "{type in ('AWS::S3::Bucket', 'AWS::KMS::Key', 'AWS::SQS::Queue', 'AWS::SNS::Topic', 'AWS::Lambda::Function') AND tags.#(key = 'dp:exception:expiry') AND _networkExposure.isExposed = true}"
+    first: 100
+  ) {
+    nodes {
+      entities {
+        id
+        name
+        type
+        tags {
+          key
+          value
+        }
+        ... on AWSResource {
+          region
+          accountId
+          arn
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}

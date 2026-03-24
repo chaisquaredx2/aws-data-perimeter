@@ -13,6 +13,9 @@
             "excluded"
           ]
         },
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
+        },
         "ArnNotLikeIfExists": {
           "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
         }
@@ -32,7 +35,12 @@
     {
       "Sid": "DenyDynamoDBWithoutCMK",
       "Effect": "Deny",
-      "Action": "dynamodb:CreateTable",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:RestoreTableFromBackup",
+        "dynamodb:RestoreTableToPointInTime"
+      ],
       "Resource": "*",
       "Condition": {
         "StringNotEqualsIfExists": {
@@ -78,12 +86,120 @@
       "Effect": "Deny",
       "Action": [
         "rds:CreateDBInstance",
-        "rds:CreateDBCluster"
+        "rds:CreateDBCluster",
+        "rds:CreateDBInstanceReadReplica"
       ],
       "Resource": "*",
       "Condition": {
         "Bool": {
           "rds:StorageEncrypted": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyEFSWithoutCMK",
+      "Effect": "Deny",
+      "Action": "elasticfilesystem:CreateFileSystem",
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "elasticfilesystem:Encrypted": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenySecretsManagerWithoutCMK",
+      "Effect": "Deny",
+      "Action": "secretsmanager:CreateSecret",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "secretsmanager:KmsKeyId": "true"
+        }
+      }
+    },
+    {
+      "Sid": "DenyKinesisWithoutCMK",
+      "Effect": "Deny",
+      "Action": [
+        "kinesis:CreateStream",
+        "kinesis:UpdateStreamMode"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "kinesis:EncryptionType": "KMS"
+        }
+      }
+    },
+    {
+      "Sid": "DenyRedshiftWithoutCMK",
+      "Effect": "Deny",
+      "Action": [
+        "redshift:CreateCluster",
+        "redshift:RestoreFromClusterSnapshot"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Bool": {
+          "redshift:Encrypted": "false"
+        }
+      }
+    },
+    {
+      "Sid": "DenyCloudWatchLogsRemoveCMK",
+      "Effect": "Deny",
+      "Action": "logs:DisassociateKmsKey",
+      "Resource": "*"
+    },
+    {
+      "Sid": "DenyCloudWatchLogsCreateWithoutCMK",
+      "Effect": "Deny",
+      "Action": "logs:CreateLogGroup",
+      "Resource": "*",
+      "Condition": {
+        "StringNotEqualsIfExists": {
+          "aws:PrincipalTag/dp:logs:cmk-automation": [
+            "allowed"
+          ]
+        },
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
+        }
+      }
+    },
+    {
+      "Sid": "DenyNonCMKKeyUsage",
+      "Effect": "Deny",
+      "Action": [
+        "kms:Decrypt",
+        "kms:GenerateDataKey",
+        "kms:GenerateDataKeyWithoutPlaintext",
+        "kms:GenerateDataKeyPair",
+        "kms:GenerateDataKeyPairWithoutPlaintext",
+        "kms:ReEncryptFrom",
+        "kms:ReEncryptTo",
+        "kms:Encrypt",
+        "kms:CreateGrant"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "aws:ResourceTag/dp:data-zone": "true"
+        },
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
+        },
+        "StringNotEqualsIfExists": {
+          "aws:PrincipalTag/dp:kms:enforcement": [
+            "excluded"
+          ]
         }
       }
     },

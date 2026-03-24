@@ -40,6 +40,11 @@ def generate(config) -> dict:
                     "StringNotEquals": {
                         "aws:PrincipalTag/team": allowed_mutator_values,
                     },
+                    # Allow service-linked roles (AWS Organizations tag
+                    # policies, Service Catalog, etc.) to manage tags
+                    "ArnNotLikeIfExists": {
+                        "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*",
+                    },
                 },
             },
             {

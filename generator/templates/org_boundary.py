@@ -1,8 +1,8 @@
 """Layer 3a: Org-Boundary SCP — prevent principals from accessing resources outside the org.
 
 Covers metadata/list operations that don't touch KMS. No ABAC tags needed —
-just an org ID check. AWS-managed resources (e.g., S3 buckets used by services)
-and service-linked roles are excluded.
+just an org ID check. AWS-managed resources (e.g., S3 buckets used by services),
+service-linked roles, and AWS service-to-service calls are excluded.
 """
 
 
@@ -27,6 +27,11 @@ def generate(config) -> dict:
         },
         "Null": {
             "aws:PrincipalTag/dp:exception:id": "true",
+        },
+        # Allow AWS service-to-service calls (S3 replication, CloudFormation
+        # StackSets, Config delivery, etc.)
+        "BoolIfExists": {
+            "aws:ViaAWSService": "false",
         },
         "ArnNotLikeIfExists": {
             "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*",

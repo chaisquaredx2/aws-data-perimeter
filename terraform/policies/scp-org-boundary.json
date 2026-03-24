@@ -27,6 +27,9 @@
         "Null": {
           "aws:PrincipalTag/dp:exception:id": "true"
         },
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
+        },
         "ArnNotLikeIfExists": {
           "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*",
           "aws:ResourceArn": [

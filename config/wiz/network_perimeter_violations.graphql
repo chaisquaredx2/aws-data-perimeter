@@ -1,0 +1,38 @@
+# Network Perimeter Violations
+#
+# Finds resources accessible from the public internet that do NOT have
+# a network enforcement exclusion tag or an approved exception. These
+# indicate resources that should be behind the network perimeter but are
+# publicly reachable.
+
+{
+  graphSearch(
+    query: "{type in ('AWS::S3::Bucket', 'AWS::EC2::Instance', 'AWS::RDS::DBInstance', 'AWS::Lambda::Function', 'AWS::ELB::LoadBalancer') AND _networkExposure.isExposed = true AND _networkExposure.exposureType = 'Internet' AND NOT tags.#(key = 'dp:network:enforcement') AND NOT tags.#(key = 'dp:exception:id')}"
+    first: 100
+  ) {
+    nodes {
+      entities {
+        id
+        name
+        type
+        tags {
+          key
+          value
+        }
+        ... on AWSResource {
+          region
+          accountId
+          arn
+          vpc {
+            id
+            name
+          }
+        }
+      }
+    }
+    pageInfo {
+      hasNextPage
+      endCursor
+    }
+  }
+}

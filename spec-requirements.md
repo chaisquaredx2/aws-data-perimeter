@@ -106,13 +106,15 @@ Without KMS gate:                   With KMS gate:
 
 ### Policy Layer Summary
 
-| Layer | Control Objective | Policy Type | ABAC Tags? | Changes When |
-|-------|-------------------|-------------|------------|--------------|
-| 1. CMK Enforcement | All resources use CMK | SCP | No | New services added |
-| 2. KMS ABAC | Data access matches classification | SCP | Yes (KMS key + principal) | Never (static policy) |
-| 3. Org Boundary | Only org principals/resources | SCP + RCP | No | Third-party partnerships |
-| 4. Network | Expected networks only | SCP + RCP | No | VPC/CIDR infra changes |
-| 5. Exceptions | Time-bound overrides | Lambda | Yes (KMS key) | Auto-expires |
+| Layer | Control Objective | Policy Type | ABAC Tags? | Changes When | Statements |
+|-------|-------------------|-------------|------------|--------------|------------|
+| 1. CMK Enforcement | All resources use CMK; deny non-CMK key usage | SCP | No | New services added | 15 |
+| 2. KMS ABAC | Data access matches classification | SCP | Yes (KMS key + principal) | Never (static policy) | 1 |
+| 3a. Org Boundary | Only org resources (metadata protection) | SCP | No | Third-party partnerships | 1 |
+| 3b. Identity Perimeter | Only org principals | RCP | No | Third-party partnerships | 1 |
+| 4. Network | Expected networks only | SCP | No | VPC/CIDR infra changes | 1 |
+| 5. Exceptions | Time-bound overrides | Lambda | Yes (KMS key) | Auto-expires | — |
+| 6. Tag Governance | Protect dp:* classification tags | SCP | No | Mutator team changes | 4 |
 
 ### Known Tradeoffs and Mitigations
 
@@ -670,125 +672,43 @@ tag_governance:
 
 def generate_cmk_enforcement_scp(intent_config):
     """
-    Layer 1: Prevent resource creation without CMK encryption.
+    Layer 1: Prevent resource creation without CMK encryption, deny use of
+    non-CMK KMS keys, and enforce CloudWatch Logs CMK association.
 
     This is the foundational prerequisite for the KMS-centric model.
     Without it, unencrypted resources or AWS-managed keys bypass ABAC entirely.
+
+    15 statements covering: S3, DynamoDB, SQS, SNS, EBS, RDS, EFS,
+    Secrets Manager, Kinesis, Redshift, CloudWatch Logs, non-CMK key usage
+    denial, and KMS key classification tag requirements.
+
+    Service-to-service edge cases:
+    - aws:ViaAWSService bypass on S3 PutObject (ALB access logs, Redshift UNLOAD)
+    - aws:ViaAWSService + SLR bypass on CloudWatch Logs CreateLogGroup (Lambda, ECS auto-create)
+    - aws:ViaAWSService bypass on non-CMK key usage (services using aws/s3, aws/ebs keys)
+    - SCPs don't apply to AWS service principals (CloudTrail, Config) — no bypass needed
     """
-    policy = {
-        "Version": "2012-10-17",
-        "Statement": []
-    }
-
-    # Deny S3 PutObject without CMK
-    policy["Statement"].append({
-        "Sid": "DenyS3WithoutCMK",
-        "Effect": "Deny",
-        "Action": "s3:PutObject",
-        "Resource": "*",
-        "Condition": {
-            "StringNotEqualsIfExists": {
-                "s3:x-amz-server-side-encryption": "aws:kms",
-                "aws:PrincipalTag/dp:kms:enforcement": ["excluded"]
-            }
-        }
-    })
-
-    # Deny S3 bucket creation without default CMK encryption
-    policy["Statement"].append({
-        "Sid": "DenyS3BucketWithoutDefaultCMK",
-        "Effect": "Deny",
-        "Action": "s3:PutEncryptionConfiguration",
-        "Resource": "*",
-        "Condition": {
-            "StringNotEqualsIfExists": {
-                "s3:x-amz-server-side-encryption": "aws:kms"
-            }
-        }
-    })
-
-    # Deny DynamoDB without CMK
-    policy["Statement"].append({
-        "Sid": "DenyDynamoDBWithoutCMK",
-        "Effect": "Deny",
-        "Action": "dynamodb:CreateTable",
-        "Resource": "*",
-        "Condition": {
-            "StringNotEqualsIfExists": {
-                "dynamodb:encryptionType": "CUSTOMER_MANAGED_CMK"
-            }
-        }
-    })
-
-    # Deny SQS without CMK
-    policy["Statement"].append({
-        "Sid": "DenySQSWithoutCMK",
-        "Effect": "Deny",
-        "Action": "sqs:CreateQueue",
-        "Resource": "*",
-        "Condition": {
-            "Null": {
-                "sqs:KmsMasterKeyId": "true"
-            }
-        }
-    })
-
-    # Deny SNS without CMK
-    policy["Statement"].append({
-        "Sid": "DenySNSWithoutCMK",
-        "Effect": "Deny",
-        "Action": "sns:CreateTopic",
-        "Resource": "*",
-        "Condition": {
-            "Null": {
-                "sns:KmsMasterKeyId": "true"
-            }
-        }
-    })
-
-    # Deny EBS volume creation without CMK
-    policy["Statement"].append({
-        "Sid": "DenyEBSWithoutCMK",
-        "Effect": "Deny",
-        "Action": "ec2:CreateVolume",
-        "Resource": "*",
-        "Condition": {
-            "Bool": {
-                "ec2:Encrypted": "false"
-            }
-        }
-    })
-
-    # Deny RDS without CMK
-    policy["Statement"].append({
-        "Sid": "DenyRDSWithoutCMK",
-        "Effect": "Deny",
-        "Action": [
-            "rds:CreateDBInstance",
-            "rds:CreateDBCluster"
-        ],
-        "Resource": "*",
-        "Condition": {
-            "Bool": {
-                "rds:StorageEncrypted": "false"
-            }
-        }
-    })
-
-    # Deny KMS key creation without required classification tags
-    policy["Statement"].append({
-        "Sid": "DenyKMSKeyWithoutClassificationTags",
-        "Effect": "Deny",
-        "Action": "kms:CreateKey",
-        "Resource": "*",
-        "Condition": {
-            "Null": {
-                "aws:RequestTag/dp:data-zone": "true"
-            }
-        }
-    })
-
-    return policy
+    # See generator/templates/cmk_enforcement.py for full implementation.
+    # Key statements:
+    #
+    # DenyS3WithoutCMK            — s3:PutObject without aws:kms (ViaAWSService bypass)
+    # DenyS3BucketWithoutDefaultCMK — s3:PutEncryptionConfiguration
+    # DenyDynamoDBWithoutCMK       — CreateTable + UpdateTable + Restore* without CMK
+    # DenySQSWithoutCMK            — sqs:CreateQueue without KmsMasterKeyId
+    # DenySNSWithoutCMK            — sns:CreateTopic without KmsMasterKeyId
+    # DenyEBSWithoutEncryption     — ec2:CreateVolume with Encrypted=false
+    # DenyRDSWithoutEncryption     — CreateDBInstance + Cluster + ReadReplica
+    # DenyEFSWithoutCMK            — elasticfilesystem:CreateFileSystem with Encrypted=false
+    # DenySecretsManagerWithoutCMK — secretsmanager:CreateSecret without KmsKeyId
+    # DenyKinesisWithoutCMK        — kinesis:CreateStream/UpdateStreamMode without KMS encryption
+    # DenyRedshiftWithoutCMK       — redshift:CreateCluster/RestoreFromClusterSnapshot unencrypted
+    # DenyCloudWatchLogsRemoveCMK  — Unconditional deny on logs:DisassociateKmsKey
+    # DenyCloudWatchLogsCreateWithoutCMK — logs:CreateLogGroup gated by
+    #                                dp:logs:cmk-automation tag (ViaAWSService + SLR bypass)
+    # DenyNonCMKKeyUsage           — Deny KMS crypto ops on keys without dp:data-zone tag
+    #                                (catches aws/s3, aws/ebs, etc.; ViaAWSService bypass)
+    # DenyKMSKeyWithoutClassificationTags — kms:CreateKey without dp:data-zone tag
+    ...
 
 
 def generate_kms_abac_scp(intent_config):
@@ -879,6 +799,11 @@ def generate_org_boundary_scp(intent_config):
             },
             "Null": {
                 "aws:PrincipalTag/dp:exception:id": "true"
+            },
+            # Allow AWS service-to-service calls (S3 replication,
+            # CloudFormation StackSets, Config delivery, etc.)
+            "BoolIfExists": {
+                "aws:ViaAWSService": "false"
             },
             # Allow AWS-managed resources (S3 buckets used by services)
             "ArnNotLikeIfExists": {
@@ -973,6 +898,9 @@ def generate_network_perimeter_scp(intent_config):
             },
             "Null": {
                 "aws:PrincipalTag/dp:exception:id": "true"
+            },
+            "ArnNotLikeIfExists": {
+                "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
             }
         }
     }
@@ -2208,100 +2136,38 @@ operational_phase:
 
 ### Template 1: CMK Enforcement SCP (Layer 1 — Prerequisite)
 
-> **Foundation policy.** Without CMK enforcement, unencrypted resources or
-> AWS-managed keys bypass the KMS ABAC gate entirely. Deploy this FIRST.
+> **Foundation policy (11 statements).** Without CMK enforcement, unencrypted
+> resources or AWS-managed keys bypass the KMS ABAC gate entirely. Deploy this
+> FIRST. Covers S3, DynamoDB, SQS, SNS, EBS, RDS, EFS, Secrets Manager,
+> Kinesis, Redshift, CloudWatch Logs, and KMS key usage. Includes
+> `aws:ViaAWSService` bypasses for AWS service-to-service calls (ALB access
+> logs, S3 replication, Lambda auto-creating log groups, etc.) and
+> service-linked role exclusions.
+>
+> See [generator/templates/cmk_enforcement.py](generator/templates/cmk_enforcement.py)
+> for the canonical implementation. Generated output:
+> [terraform/policies/scp-cmk-enforcement.json](terraform/policies/scp-cmk-enforcement.json)
+> (3357 bytes, 66% of 5120 limit).
 
-```json
-{
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "DenyS3WithoutCMK",
-      "Effect": "Deny",
-      "Action": "s3:PutObject",
-      "Resource": "*",
-      "Condition": {
-        "StringNotEqualsIfExists": {
-          "s3:x-amz-server-side-encryption": "aws:kms",
-          "aws:PrincipalTag/dp:kms:enforcement": ["excluded"]
-        },
-        "ArnNotLikeIfExists": {
-          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
-        }
-      }
-    },
-    {
-      "Sid": "DenyS3BucketWithoutDefaultCMK",
-      "Effect": "Deny",
-      "Action": "s3:PutEncryptionConfiguration",
-      "Resource": "*",
-      "Condition": {
-        "StringNotEqualsIfExists": {
-          "s3:x-amz-server-side-encryption": "aws:kms"
-        }
-      }
-    },
-    {
-      "Sid": "DenyDynamoDBWithoutCMK",
-      "Effect": "Deny",
-      "Action": "dynamodb:CreateTable",
-      "Resource": "*",
-      "Condition": {
-        "StringNotEqualsIfExists": {
-          "dynamodb:encryptionType": "CUSTOMER_MANAGED_CMK"
-        }
-      }
-    },
-    {
-      "Sid": "DenySQSWithoutCMK",
-      "Effect": "Deny",
-      "Action": "sqs:CreateQueue",
-      "Resource": "*",
-      "Condition": {
-        "Null": {
-          "sqs:KmsMasterKeyId": "true"
-        }
-      }
-    },
-    {
-      "Sid": "DenyEBSWithoutEncryption",
-      "Effect": "Deny",
-      "Action": "ec2:CreateVolume",
-      "Resource": "*",
-      "Condition": {
-        "Bool": {
-          "ec2:Encrypted": "false"
-        }
-      }
-    },
-    {
-      "Sid": "DenyRDSWithoutEncryption",
-      "Effect": "Deny",
-      "Action": [
-        "rds:CreateDBInstance",
-        "rds:CreateDBCluster"
-      ],
-      "Resource": "*",
-      "Condition": {
-        "Bool": {
-          "rds:StorageEncrypted": "false"
-        }
-      }
-    },
-    {
-      "Sid": "DenyKMSKeyWithoutClassificationTags",
-      "Effect": "Deny",
-      "Action": "kms:CreateKey",
-      "Resource": "*",
-      "Condition": {
-        "Null": {
-          "aws:RequestTag/dp:data-zone": "true"
-        }
-      }
-    }
-  ]
-}
-```
+**Statement summary (15 statements):**
+
+| Sid | Service | Condition Key | Notes |
+|-----|---------|---------------|-------|
+| DenyS3WithoutCMK | s3:PutObject | `s3:x-amz-server-side-encryption` ≠ aws:kms | + ViaAWSService bypass (ALB access logs) |
+| DenyS3BucketWithoutDefaultCMK | s3:PutEncryptionConfiguration | `s3:x-amz-server-side-encryption` ≠ aws:kms | |
+| DenyDynamoDBWithoutCMK | dynamodb:Create/Update/Restore* | `dynamodb:encryptionType` ≠ CUSTOMER_MANAGED_CMK | |
+| DenySQSWithoutCMK | sqs:CreateQueue | `sqs:KmsMasterKeyId` is null | |
+| DenySNSWithoutCMK | sns:CreateTopic | `sns:KmsMasterKeyId` is null | |
+| DenyEBSWithoutEncryption | ec2:CreateVolume | `ec2:Encrypted` = false | |
+| DenyRDSWithoutEncryption | rds:CreateDB*/ReadReplica | `rds:StorageEncrypted` = false | Boolean only — cannot distinguish CMK vs aws/rds |
+| DenyEFSWithoutCMK | elasticfilesystem:CreateFileSystem | `elasticfilesystem:Encrypted` = false | |
+| DenySecretsManagerWithoutCMK | secretsmanager:CreateSecret | `secretsmanager:KmsKeyId` is null | |
+| DenyKinesisWithoutCMK | kinesis:CreateStream/UpdateStreamMode | `kinesis:EncryptionType` ≠ KMS | |
+| DenyRedshiftWithoutCMK | redshift:CreateCluster/RestoreFromSnapshot | `redshift:Encrypted` = false | |
+| DenyCloudWatchLogsRemoveCMK | logs:DisassociateKmsKey | Unconditional deny | No condition key for KMS at CreateLogGroup |
+| DenyCloudWatchLogsCreateWithoutCMK | logs:CreateLogGroup | `dp:logs:cmk-automation` tag gate | + ViaAWSService + SLR bypass |
+| DenyNonCMKKeyUsage | kms:Decrypt/Encrypt/GenerateDataKey/... | `aws:ResourceTag/dp:data-zone` is null | Catches aws/s3, aws/ebs managed keys |
+| DenyKMSKeyWithoutClassificationTags | kms:CreateKey | `aws:RequestTag/dp:data-zone` is null | Moved to L6 tag governance as well |
 
 ### Template 2: KMS ABAC SCP (Layer 2 — Primary Data Access Gate)
 
@@ -2388,6 +2254,9 @@ operational_phase:
         },
         "Null": {
           "aws:PrincipalTag/dp:exception:id": "true"
+        },
+        "BoolIfExists": {
+          "aws:ViaAWSService": "false"
         },
         "ArnNotLikeIfExists": {
           "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*",
@@ -2482,6 +2351,9 @@ operational_phase:
         },
         "Null": {
           "aws:PrincipalTag/dp:exception:id": "true"
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
         }
       }
     }
@@ -2528,11 +2400,14 @@ operational_phase:
             "security-admin",
             "platform-engineering"
           ]
+        },
+        "ArnNotLikeIfExists": {
+          "aws:PrincipalArn": "arn:aws:iam::*:role/aws-service-role/*"
         }
       }
     },
     {
-      "Sid": "RequireKMSKeyClassificationTags",
+      "Sid": "RequireKMSKeyDataZoneTag",
       "Effect": "Deny",
       "Action": "kms:CreateKey",
       "Resource": "*",
@@ -2624,11 +2499,26 @@ operational_phase:
                          ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │               Monitoring & Compliance                            │
-│  • Access Analyzer findings                                      │
-│  • Wiz security graph analysis                                   │
-│  • KMS key usage CloudTrail logs                                 │
-│  • Exception lifecycle metrics (CloudWatch)                      │
+│  • Access Analyzer findings (→ compliance reporter Lambda)       │
+│  • Wiz security graph analysis (→ tag remediation webhook)       │
+│  • CloudTrail KMS deny events (Athena named queries)             │
+│  • Exception lifecycle metrics (CloudWatch dashboard)            │
 │  • DynamoDB audit trail for exception revocations                │
+│  • Compliance metrics: DataPerimeter/Compliance namespace        │
+│  • Remediation metrics: DataPerimeter/Remediation namespace      │
+└─────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────┐
+│               Auto-Remediation                                   │
+│                                                                  │
+│  Wiz detects untagged KMS key                                    │
+│    → Wiz Automation webhook POST                                 │
+│    → API Gateway (API key auth)                                  │
+│    → Tag Remediation Lambda                                      │
+│      1. Extract KMS key ARN + account ID from Wiz payload        │
+│      2. GET Tag Lookup API /accounts/{account_id} → dp:* tags    │
+│      3. Apply missing dp:data-zone/environment/project to key    │
+│      4. SNS notification + CloudWatch metric                     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
